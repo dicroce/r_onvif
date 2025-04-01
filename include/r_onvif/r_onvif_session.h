@@ -60,6 +60,8 @@ private:
     r_utils::r_nullable<std::string> _get_scope_field(const std::string& scope, const std::string& field_name) const;
     std::string _get_camera_name(int index, const std::string& default_name) const;
     std::string _extract_xaddrs(int index) const;
+    std::vector<std::string> _extract_all_xaddrs(int index) const;
+    std::string _find_connectable_xaddr(const std::vector<std::string>& xaddrs) const;
     std::string _extract_address(int index) const;
     std::string _get_xml_value(xmlDocPtr doc, const std::string& xpath, const std::string& id) const;
     bool _has_xml_node(xmlDocPtr doc, const std::string& xpath) const;

@@ -215,7 +215,10 @@ int main( int argc, char* argv[] )
     else printf("\nFailure.\n");
 
     if(something_failed)
-        system("/bin/bash -c 'read -p \"Press Any Key\"'");
+        if(system("/bin/bash -c 'read -p \"Press Any Key\"'") < 0)
+        {
+            printf("system() failure.\n");
+        }
 
     return 0;
 }

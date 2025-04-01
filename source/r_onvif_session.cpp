@@ -21,6 +21,7 @@
 #include "r_http/r_utils.h"
 #include "r_http/r_client_response.h"
 #include "r_http/r_status_codes.h"
+#include "r_http/r_utils.h"
 
 #ifdef IS_WINDOWS
     #include <ws2tcpip.h>
@@ -95,7 +96,12 @@ vector<r_onvif_discovery_info> r_onvif_session::discover()
             {
                 r_onvif_discovery_info info;
                 info.index = i;
-                info.xaddrs = _extract_xaddrs(i);
+
+                auto all_xaddrs = _extract_all_xaddrs(i);
+
+                auto connectable_xaddr = _find_connectable_xaddr(all_xaddrs);
+
+                info.xaddrs = connectable_xaddr;
 
                 string host, protocol, uri;
                 int port;
@@ -342,6 +348,43 @@ std::string r_onvif_session::_extract_xaddrs(
     auto value = _get_xml_value(xml_input.get(), "//s:Body//d:ProbeMatches//d:ProbeMatch//d:XAddrs", string(_buf[index], _len[index]));
 
     return r_string_utils::split(value, " ").front();
+}
+
+std::vector<std::string> r_onvif_session::_extract_all_xaddrs(int index) const
+{
+    raii_ptr<xmlDoc> xml_input(xmlParseMemory(_buf[index], _len[index]), [](xmlDoc* p){xmlFreeDoc(p);});
+
+    auto value = _get_xml_value(xml_input.get(), "//s:Body//d:ProbeMatches//d:ProbeMatch//d:XAddrs", string(_buf[index], _len[index]));
+
+    return r_string_utils::split(value, " ");
+}
+
+std::string r_onvif_session::_find_connectable_xaddr(const std::vector<std::string>& xaddrs) const
+{
+    for(const auto& xaddr : xaddrs)
+    {
+        try
+        {
+            r_utils::r_socket socket;
+
+            string host, protocol, uri;
+            int port;
+            r_http::parse_url_parts(xaddr, host, port, protocol, uri);
+
+            if(protocol == "https")
+                continue;
+
+            socket.connect(host, port);
+        }
+        catch(...)
+        {
+            continue;
+        }
+
+        return xaddr;
+    }
+
+    return std::string();
 }
 
 std::string r_onvif_session::_extract_address(
