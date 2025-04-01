@@ -16,15 +16,14 @@ endif()
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     add_compile_definitions(IS_WINDOWS)
-    set(VCPKG_TARGET_TRIPLET x64-windows)
 endif()
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     add_compile_definitions(IS_LINUX)
-    set(VCPKG_TARGET_TRIPLET x64-linux-dynamic)
+    add_compile_options(
+        "-fno-omit-frame-pointer"
+        "$<$<CONFIG:DEBUG>:-O0;-g3;-ggdb3;-fasynchronous-unwind-tables>"
+    )
 endif()
 
-add_compile_options(
-    "-fno-omit-frame-pointer"
-    "$<$<CONFIG:DEBUG>:-O0;-g3;-ggdb3;-fasynchronous-unwind-tables>"
-)
+
