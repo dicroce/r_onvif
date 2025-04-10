@@ -23,6 +23,7 @@ struct discovered_info
     int port;
     std::string protocol;
     std::string uri;
+    std::string address;
 };
 
 std::vector<discovered_info> filter_discovered(const std::vector<std::string>& discovered);

@@ -566,38 +566,51 @@ std::vector<discovered_info> r_onvif::filter_discovered(const std::vector<std::s
 {
     std::vector<discovered_info> filtered;
     std::map<std::string, bool> hosts_seen;
-
     for( auto d : discovered)
     {
         try
         {
             pugi::xml_document doc;
             pugi::xml_parse_result result = doc.load_string(d.c_str());
-
             if (!result)
                 throw std::runtime_error("Failed to parse XML: " + std::string(result.description()));
-
-            // Define namespace
-            const char* ns_prefix = "d";
-            const char* ns_uri = "http://schemas.xmlsoap.org/ws/2005/04/discovery";
-
+            
+            // Define namespaces
+            const char* d_ns_uri = "http://schemas.xmlsoap.org/ws/2005/04/discovery";
+            const char* s_ns_uri = "http://www.w3.org/2003/05/soap-envelope";
+            const char* a_ns_uri = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+            
             // Use XPath with namespace to find XAddrs nodes
-            std::string xpath_query = "//*[local-name()='XAddrs' and namespace-uri()='" + std::string(ns_uri) + "']";
+            std::string xpath_query = "//*[local-name()='XAddrs' and namespace-uri()='" + std::string(d_ns_uri) + "']";
             pugi::xpath_query query(xpath_query.c_str());
             pugi::xpath_node_set nodes = query.evaluate_node_set(doc);
-
+            
+            // Use XPath to find Address node
+            std::string addr_xpath = "//*[local-name()='Body' and namespace-uri()='" + std::string(s_ns_uri) + "']"
+                                    "/*[local-name()='ProbeMatches' and namespace-uri()='" + std::string(d_ns_uri) + "']"
+                                    "/*[local-name()='ProbeMatch' and namespace-uri()='" + std::string(d_ns_uri) + "']"
+                                    "/*[local-name()='EndpointReference' and namespace-uri()='" + std::string(a_ns_uri) + "']"
+                                    "/*[local-name()='Address' and namespace-uri()='" + std::string(a_ns_uri) + "']";
+            
+            pugi::xpath_query addr_query(addr_xpath.c_str());
+            pugi::xpath_node addr_node = addr_query.evaluate_node(doc);
+            
+            // Get the address value
+            std::string address = "";
+            if (addr_node)
+            {
+                address = addr_node.node().text().get();
+            }
+            
             std::vector<std::string> xaddrs_services;
-
             for (pugi::xpath_node node : nodes)
             {
                 std::string text = node.node().text().get();
                 std::vector<std::string> addresses = r_string_utils::split(text, " ");
                 xaddrs_services.insert(end(xaddrs_services), begin(addresses), end(addresses));
             }
-
             if (xaddrs_services.empty())
                 throw std::runtime_error("No ONVIF services found1.");
-
             int first_connnected_index = -1;
             for(int i = 0; i < xaddrs_services.size(); ++i)
             {
@@ -622,14 +635,12 @@ std::vector<discovered_info> r_onvif::filter_discovered(const std::vector<std::s
                     // ignoring individual connection errors...
                 }
             }
-
             // But, we do need to throw if we couldn't connect to ANY of the services.
             if(first_connnected_index == -1)
                 throw std::runtime_error("No ONVIF services found2.");
-
             discovered_info di;
             r_http::parse_url_parts(xaddrs_services[first_connnected_index], di.host, di.port, di.protocol, di.uri);
-
+            di.address = address; // Assign the extracted address to the discovered_info struct
             if(hosts_seen.find(di.host) == hosts_seen.end())
             {
                 filtered.push_back(di);
@@ -641,7 +652,6 @@ std::vector<discovered_info> r_onvif::filter_discovered(const std::vector<std::s
             // Some problem parsing something we discovered. squelching here so we can continue.
         }
     }
-
     return filtered;
 }
 
