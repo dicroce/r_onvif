@@ -2,6 +2,8 @@
 #ifndef __r_onvif_r_onvif_session_h
 #define __r_onvif_r_onvif_session_h
 
+#include <pugixml.hpp>
+
 #include <libxml/parser.h>
 #include <libxml/xpath.h>
 #include "r_utils/r_nullable.h"
@@ -12,6 +14,66 @@
 
 namespace r_onvif
 {
+
+std::vector<std::string> discover(const std::string& uuid);
+
+struct discovered_info
+{
+    std::string host;
+    int port;
+    std::string protocol;
+    std::string uri;
+};
+
+std::vector<discovered_info> filter_discovered(const std::vector<std::string>& discovered);
+
+typedef std::string onvif_capabilities;
+typedef std::string onvif_media_service;
+typedef std::string onvif_profile_token;
+
+struct onvif_profile_info
+{
+    onvif_profile_token token;
+    std::string encoding;
+    uint16_t width;
+    uint16_t height;
+};
+
+class r_onvif_cam
+{
+public:
+    r_onvif_cam(const std::string& host, int port, const std::string& protocol, const std::string& uri, const r_utils::r_nullable<std::string>& username, const r_utils::r_nullable<std::string>& password);
+
+    time_t get_camera_system_date_and_time() const;
+
+    onvif_capabilities get_camera_capabilities() const;
+
+    onvif_media_service get_media_service(const onvif_capabilities& capabilities) const;
+
+    std::vector<onvif_profile_info> get_profile_tokens(onvif_media_service media_service);
+
+    std::string get_stream_uri(onvif_media_service media_service, onvif_profile_token profile_token);
+
+private:
+    void _add_username_digest_header(
+        pugi::xml_document* doc,
+        pugi::xml_node root, 
+        const std::string& username, 
+        const std::string& password, 
+        int time_offset_seconds
+    ) const;
+
+    std::vector<std::string> _xaddrs_services;
+    std::string _service_protocol;
+    std::string _service_host;
+    int _service_port;
+    std::string _service_uri;
+
+    r_utils::r_nullable<std::string> _username;
+    r_utils::r_nullable<std::string> _password;
+
+    int _time_offset_seconds;
+};
 
 struct r_onvif_discovery_info
 {
@@ -81,7 +143,6 @@ private:
     char _buf[128][8192];
     int _len[128];
     std::string _uuid;
-    int _discovery_msg_id;
 };
 
 }

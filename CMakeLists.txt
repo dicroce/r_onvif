@@ -24,6 +24,30 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(r_http)
 
+FetchContent_Declare(
+    pugixml
+    GIT_REPOSITORY https://github.com/zeux/pugixml.git
+    GIT_TAG        v1.15
+)
+FetchContent_MakeAvailable(pugixml)
+
+function(dump_cmake_variables)
+    get_cmake_property(_variableNames VARIABLES)
+    list (SORT _variableNames)
+    foreach (_variableName ${_variableNames})
+        if (ARGV0)
+            unset(MATCHED)
+            string(REGEX MATCH ${ARGV0} MATCHED ${_variableName})
+            if (NOT MATCHED)
+                continue()
+            endif()
+        endif()
+        message(STATUS "${_variableName}=${${_variableName}}")
+    endforeach()
+endfunction()
+
+dump_cmake_variables()
+
 add_library(
     r_onvif
     include/r_onvif/r_onvif_session.h
@@ -36,6 +60,7 @@ target_include_directories(
     ${r_utils_SOURCE_DIR}/include
     ${r_http_SOURCE_DIR}/include
     ${libxml-2.0_STATIC_INCLUDE_DIRS}
+    ${pugixml_SOURCE_DIR}/src/
 )
 
 target_link_directories(
@@ -43,6 +68,7 @@ target_link_directories(
     ${r_utils_BUILD_DIR}
     ${r_http_BUILD_DIR}
     ${libxml-2.0_STATIC_LIBRARY_DIRS}
+    ${pugixml_BINARY_DIR}
 )
 
 target_link_libraries(
@@ -50,6 +76,7 @@ target_link_libraries(
     r_http
     r_utils
     ${libxml-2.0_STATIC_LIBRARIES}
+    pugixml
 )
 
 add_subdirectory(ut)

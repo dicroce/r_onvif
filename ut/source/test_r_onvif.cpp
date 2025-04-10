@@ -3,6 +3,7 @@
 #include "r_onvif/r_onvif_session.h"
 #include "r_utils/r_string_utils.h"
 #include "r_utils/r_sha1.h"
+#include "r_utils/r_uuid.h"
 #include <string.h>
 #include <map>
 
@@ -22,6 +23,52 @@ void test_r_onvif::teardown()
 
 void test_r_onvif::test_r_onvif_session_basic()
 {
+    auto discovered = r_onvif::discover(r_uuid::generate());
+
+    auto filtered = r_onvif::filter_discovered(discovered);
+
+    for(auto& di : filtered)
+    {
+        r_nullable<string> username, password;
+        username = "root";
+        password = "emperor1";
+        r_onvif_cam cam(di.host, di.port, di.protocol, di.uri, username, password);
+
+        auto caps = cam.get_camera_capabilities();
+
+        auto oms = cam.get_media_service(caps);
+
+        printf("onvif media service url=%s\n", oms.c_str());
+
+        auto profile_tokens = cam.get_profile_tokens(oms);
+
+        for(auto& pt : profile_tokens)
+        {
+            printf("profile_token=%s, encoding=%s, width=%d, height=%d\n", pt.token.c_str(), pt.encoding.c_str(), pt.width, pt.height);
+        }
+
+
+
+
+
+
+
+
+
+
+    }
+
+//    r_onvif_session session;
+
+//    auto discovered2= session.discover();
+
+//    printf("discovered2.size()=%ld\n", discovered2.size());
+
+//    bool foundSomething = false;
+//    for(auto& di : discovered2)
+//    {
+//    }
+
 #if 0
     struct keys
     {
