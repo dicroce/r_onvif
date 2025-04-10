@@ -29,6 +29,7 @@ void test_r_onvif::test_r_onvif_session_basic()
 
     for(auto& di : filtered)
     {
+        printf("%s\n", di.camera_name.c_str());
         r_nullable<string> username, password;
         username = "root";
         password = "emperor1";

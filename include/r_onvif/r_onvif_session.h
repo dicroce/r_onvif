@@ -24,6 +24,7 @@ struct discovered_info
     std::string protocol;
     std::string uri;
     std::string address;
+    std::string camera_name;
 };
 
 std::vector<discovered_info> filter_discovered(const std::vector<std::string>& discovered);

@@ -472,6 +472,24 @@ static string _extract_onvif_value(const string& xmlDocument, const string& path
     return _extract_value(xmlDocument, path, namespaces);
 }
 
+static r_nullable<string> _get_scope_field(const string& scope, const string& field_name)
+{
+    r_nullable<string> output;
+
+    auto pos = scope.find(field_name);
+    if(pos != string::npos)
+    {
+        auto space_pos = scope.find(" ", pos);
+
+        auto contents = (space_pos != string::npos)?scope.substr(pos, space_pos - pos):scope.substr(pos);
+        auto last_slash = contents.rfind("/");
+        auto start = (last_slash == string::npos)?0:last_slash + 1;
+        output.set_value(r_string_utils::uri_decode(contents.substr(start)));
+    }
+
+    return output;
+}
+
 vector<string> r_onvif::discover(const string& uuid)
 {
     auto id = r_string_utils::format("urn:uuid:%s", uuid.c_str());
@@ -602,6 +620,22 @@ std::vector<discovered_info> r_onvif::filter_discovered(const std::vector<std::s
                 address = addr_node.node().text().get();
             }
             
+            // Use XPath to find Scopes node
+            std::string scopes_xpath = "//*[local-name()='Body' and namespace-uri()='" + std::string(s_ns_uri) + "']"
+                                      "/*[local-name()='ProbeMatches' and namespace-uri()='" + std::string(d_ns_uri) + "']"
+                                      "/*[local-name()='ProbeMatch' and namespace-uri()='" + std::string(d_ns_uri) + "']"
+                                      "/*[local-name()='Scopes' and namespace-uri()='" + std::string(d_ns_uri) + "']";
+            
+            pugi::xpath_query scopes_query(scopes_xpath.c_str());
+            pugi::xpath_node scopes_node = scopes_query.evaluate_node(doc);
+            
+            // Get the scopes value
+            std::string scopes = "";
+            if (scopes_node)
+            {
+                scopes = scopes_node.node().text().get();
+            }
+            
             std::vector<std::string> xaddrs_services;
             for (pugi::xpath_node node : nodes)
             {
@@ -641,6 +675,24 @@ std::vector<discovered_info> r_onvif::filter_discovered(const std::vector<std::s
             discovered_info di;
             r_http::parse_url_parts(xaddrs_services[first_connnected_index], di.host, di.port, di.protocol, di.uri);
             di.address = address; // Assign the extracted address to the discovered_info struct
+
+            auto mfgr = _get_scope_field(scopes, (char*)"onvif://www.onvif.org/name/");
+            auto hdwr = _get_scope_field(scopes, (char*)"onvif://www.onvif.org/hardware/");
+
+            // SAMSUNG E4500n
+            // SAMSUNG 192.168.1.11
+            // E4500n 192
+
+            string camera_name;
+
+            if(!mfgr.is_null())
+                camera_name = mfgr.value();
+
+            if(camera_name.empty())
+                camera_name = di.host;
+
+            di.camera_name = camera_name;
+
             if(hosts_seen.find(di.host) == hosts_seen.end())
             {
                 filtered.push_back(di);
