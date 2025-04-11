@@ -521,13 +521,13 @@ vector<string> r_onvif::discover(const string& uuid)
         }
         if (pIPAddrTable == NULL) {
             printf("Memory allocation failed for GetIpAddrTable\n");
-            return;
+            return discovered;
         }
     }
 
     if ((dwRetVal = GetIpAddrTable(pIPAddrTable, &dwSize, 0)) != NO_ERROR) {
         printf("GetIpAddrTable failed with error %lu\n", dwRetVal);
-        return;
+        return discovered;
     }
 
     int p = 0;
