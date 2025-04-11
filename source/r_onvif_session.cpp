@@ -974,8 +974,12 @@ string r_onvif::r_onvif_cam::get_stream_uri(onvif_media_service media_service, o
     std::ostringstream oss;
     doc.save(oss, "  ", pugi::format_default | pugi::format_indent);
     auto request = oss.str();
-    
-    auto result = _http_interact(_service_host, _service_port, "POST", media_service, request);
+
+    string host, http_protocol, uri;
+    int port;
+    r_http::parse_url_parts(media_service, host, port, http_protocol, uri);
+
+    auto result = _http_interact(host, port, "POST", uri, request);
     
     if(result.first != 200)
         throw std::runtime_error("Failed to get stream uri");
