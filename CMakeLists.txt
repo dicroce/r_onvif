@@ -8,7 +8,6 @@ include(r_build.txt)
 include(FetchContent)
 
 find_package(PkgConfig)
-pkg_search_module(libxml-2.0 REQUIRED IMPORTED_TARGET libxml-2.0)
 
 FetchContent_Declare(
     r_utils
@@ -42,7 +41,6 @@ target_include_directories(
     include
     ${r_utils_SOURCE_DIR}/include
     ${r_http_SOURCE_DIR}/include
-    ${libxml-2.0_STATIC_INCLUDE_DIRS}
     ${pugixml_SOURCE_DIR}/src/
 )
 
@@ -50,7 +48,6 @@ target_link_directories(
     r_onvif PUBLIC 
     ${r_utils_BUILD_DIR}
     ${r_http_BUILD_DIR}
-    ${libxml-2.0_STATIC_LIBRARY_DIRS}
     ${pugixml_BINARY_DIR}
 )
 
@@ -58,7 +55,6 @@ target_link_libraries(
     r_onvif 
     r_http
     r_utils
-    ${libxml-2.0_STATIC_LIBRARIES}
     pugixml
 )
 
