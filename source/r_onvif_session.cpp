@@ -507,7 +507,7 @@ vector<string> r_onvif::discover(const string& uuid)
     int status = 0;
     struct in_addr localInterface;
 
-#ifdef IS_WINDOWS
+#ifdef _WIN32
 #if 0
     PMIB_IPADDRTABLE pIPAddrTable;
     DWORD dwSize = 0;
