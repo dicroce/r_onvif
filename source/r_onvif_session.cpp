@@ -508,7 +508,7 @@ vector<string> r_onvif::discover(const string& uuid)
     struct in_addr localInterface;
 
 #ifdef _WIN32
-#if 0
+
     PMIB_IPADDRTABLE pIPAddrTable;
     DWORD dwSize = 0;
     DWORD dwRetVal = 0;
@@ -549,7 +549,7 @@ vector<string> r_onvif::discover(const string& uuid)
         free(pIPAddrTable);
         pIPAddrTable = NULL;
     }
-#endif
+
     status = setsockopt(socket.fd(), SOL_SOCKET, SO_RCVTIMEO, (const char *)&broadcast, sizeof(broadcast));
 #else
     status = setsockopt(socket.fd(), SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
