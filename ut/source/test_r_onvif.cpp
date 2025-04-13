@@ -4,6 +4,7 @@
 #include "r_utils/r_string_utils.h"
 #include "r_utils/r_sha1.h"
 #include "r_utils/r_uuid.h"
+#include "r_utils/r_socket.h"
 #include <string.h>
 #include <map>
 
@@ -15,6 +16,7 @@ REGISTER_TEST_FIXTURE(test_r_onvif);
 
 void test_r_onvif::setup()
 {
+    r_raw_socket::socket_startup();
 }
 
 void test_r_onvif::teardown()
@@ -25,7 +27,11 @@ void test_r_onvif::test_r_onvif_session_basic()
 {
     auto discovered = r_onvif::discover(r_uuid::generate());
 
+    printf("discovered.size()=%lld\n", discovered.size());
+
     auto filtered = r_onvif::filter_discovered(discovered);
+
+    printf("filtered.size()=%lld\n", filtered.size());
 
     for(auto& di : filtered)
     {

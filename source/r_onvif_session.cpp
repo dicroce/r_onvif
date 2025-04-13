@@ -488,93 +488,312 @@ static r_nullable<string> _get_scope_field(const string& scope, const string& fi
     return output;
 }
 
+#ifdef IS_WINDOWS
+static IN_ADDR _find_active_network_interface_windows()
+{
+    SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock == INVALID_SOCKET) {
+        // Return default interface if socket creation fails
+        IN_ADDR defaultAddr;
+        defaultAddr.s_addr = INADDR_ANY;
+        return defaultAddr;
+    }
+    
+    // Connect to Google's DNS to determine active interface
+    sockaddr_in googleDns = {};
+    googleDns.sin_family = AF_INET;
+    googleDns.sin_port = htons(53);
+    inet_pton(AF_INET, "8.8.8.8", &googleDns.sin_addr);
+    
+    if (connect(sock, (sockaddr*)&googleDns, sizeof(googleDns)) == SOCKET_ERROR) {
+        closesocket(sock);
+        // Return default interface if connection fails
+        IN_ADDR defaultAddr;
+        defaultAddr.s_addr = INADDR_ANY;
+        return defaultAddr;
+    }
+    
+    // Get local address
+    sockaddr_in localAddr;
+    int localAddrLen = sizeof(localAddr);
+    if (getsockname(sock, (sockaddr*)&localAddr, &localAddrLen) == SOCKET_ERROR) {
+        closesocket(sock);
+        // Return default interface if getsockname fails
+        IN_ADDR defaultAddr;
+        defaultAddr.s_addr = INADDR_ANY;
+        return defaultAddr;
+    }
+    
+    closesocket(sock);
+    return localAddr.sin_addr;
+}
+#endif
+
+// Helper function to find active network interface on Linux
+#ifdef IS_LINUX
+static struct in_addr _find_active_network_interface_linux()
+{
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        // Return default interface if socket creation fails
+        struct in_addr defaultAddr;
+        defaultAddr.s_addr = INADDR_ANY;
+        return defaultAddr;
+    }
+    
+    // Connect to Google's DNS to determine active interface
+    struct sockaddr_in googleDns;
+    memset(&googleDns, 0, sizeof(googleDns));
+    googleDns.sin_family = AF_INET;
+    googleDns.sin_port = htons(53);
+    inet_pton(AF_INET, "8.8.8.8", &googleDns.sin_addr);
+    
+    if (connect(sock, (struct sockaddr*)&googleDns, sizeof(googleDns)) < 0) {
+        close(sock);
+        // Return default interface if connection fails
+        struct in_addr defaultAddr;
+        defaultAddr.s_addr = INADDR_ANY;
+        return defaultAddr;
+    }
+    
+    // Get local address
+    struct sockaddr_in localAddr;
+    socklen_t localAddrLen = sizeof(localAddr);
+    if (getsockname(sock, (struct sockaddr*)&localAddr, &localAddrLen) < 0) {
+        close(sock);
+        // Return default interface if getsockname fails
+        struct in_addr defaultAddr;
+        defaultAddr.s_addr = INADDR_ANY;
+        return defaultAddr;
+    }
+    
+    close(sock);
+    return localAddr.sin_addr;
+}
+#endif
+
 vector<string> r_onvif::discover(const string& uuid)
 {
     auto id = r_string_utils::format("urn:uuid:%s", uuid.c_str());
-
     vector<string> discovered;
 
     string broadcast_message =
     "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:a=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\"><SOAP-ENV:Header><a:Action SOAP-ENV:mustUnderstand=\"1\">http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</a:Action><a:MessageID>" + id + "</a:MessageID><a:ReplyTo><a:Address>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:Address></a:ReplyTo><a:To SOAP-ENV:mustUnderstand=\"1\">urn:schemas-xmlsoap-org:ws:2005:04:discovery</a:To></SOAP-ENV:Header><SOAP-ENV:Body><p:Probe xmlns:p=\"http://schemas.xmlsoap.org/ws/2005/04/discovery\"><d:Types xmlns:d=\"http://schemas.xmlsoap.org/ws/2005/04/discovery\" xmlns:dp0=\"http://www.onvif.org/ver10/network/wsdl\">dp0:NetworkVideoTransmitter</d:Types></p:Probe></SOAP-ENV:Body></SOAP-ENV:Envelope>";
 
-    r_udp_socket socket;
-
-    struct timeval tv;
-    tv.tv_sec = 5;
-    tv.tv_usec = 0;
-    int broadcast = 5000;
-    char loopch = 0;
-    int status = 0;
-    struct in_addr localInterface;
-
-#ifdef _WIN32
-
-    PMIB_IPADDRTABLE pIPAddrTable;
-    DWORD dwSize = 0;
-    DWORD dwRetVal = 0;
-    IN_ADDR IPAddr;
-
-    pIPAddrTable = (MIB_IPADDRTABLE *) malloc(sizeof(MIB_IPADDRTABLE));
-    if (pIPAddrTable) {
-        if (GetIpAddrTable(pIPAddrTable, &dwSize, 0) == ERROR_INSUFFICIENT_BUFFER) {
-            free(pIPAddrTable);
-            pIPAddrTable = (MIB_IPADDRTABLE *) malloc(dwSize);
-        }
-        if (pIPAddrTable == NULL) {
-            printf("Memory allocation failed for GetIpAddrTable\n");
-            return discovered;
-        }
-    }
-
-    if ((dwRetVal = GetIpAddrTable(pIPAddrTable, &dwSize, 0)) != NO_ERROR) {
-        printf("GetIpAddrTable failed with error %lu\n", dwRetVal);
+#ifdef IS_WINDOWS
+    // Windows-specific implementation
+    SOCKET sock = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock == INVALID_SOCKET) {
+        printf("Socket creation failed: %d\n", WSAGetLastError());
         return discovered;
     }
-
-    int p = 0;
-    while (p < (int)pIPAddrTable->dwNumEntries) {
-        IPAddr.S_un.S_addr = (u_long)pIPAddrTable->table[p].dwAddr;
-        IPAddr.S_un.S_addr = (u_long)pIPAddrTable->table[p].dwMask;
-        if (pIPAddrTable->table[p].dwAddr != inet_addr("127.0.0.1") && pIPAddrTable->table[p].dwMask == inet_addr("255.255.255.0")) {
-            localInterface.s_addr = pIPAddrTable->table[p].dwAddr;
-            status = setsockopt(socket.fd(), IPPROTO_IP, IP_MULTICAST_IF, (const char *)&localInterface, sizeof(localInterface));
-            if (status < 0)
-                printf("ip_multicast_if error");
-            p = (int)pIPAddrTable->dwNumEntries;
+    
+    // Enable address reuse
+    BOOL reuse = TRUE;
+    if (::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) != 0) {
+        printf("Set reuse address failed: %d\n", WSAGetLastError());
+        closesocket(sock);
+        return discovered;
+    }
+    
+    // Set receive timeout
+    DWORD recvTimeout = 5000; // 5 seconds
+    if (::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&recvTimeout, sizeof(recvTimeout)) != 0) {
+        printf("Set receive timeout failed: %d\n", WSAGetLastError());
+    }
+    
+    // Find active interface
+    IN_ADDR routable_addr = _find_active_network_interface_windows();
+    
+    // Bind to ANY address on a dynamic port
+    struct sockaddr_in localAddr;
+    memset(&localAddr, 0, sizeof(localAddr));
+    localAddr.sin_family = AF_INET;
+    localAddr.sin_port = htons(0); // Dynamic port
+    localAddr.sin_addr.s_addr = INADDR_ANY;
+    
+    if (::bind(sock, (struct sockaddr*)&localAddr, sizeof(localAddr)) != 0) {
+        printf("Bind failed: %d\n", WSAGetLastError());
+        closesocket(sock);
+        return discovered;
+    }
+    
+    // Set multicast interface
+    if (::setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, (const char*)&routable_addr, sizeof(routable_addr)) != 0) {
+        printf("Set multicast interface failed: %d\n", WSAGetLastError());
+    }
+    
+    // Join multicast group
+    struct ip_mreq mreq;
+    mreq.imr_multiaddr.s_addr = inet_addr("239.255.255.250");
+    mreq.imr_interface = routable_addr;
+    
+    if (::setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq, sizeof(mreq)) != 0) {
+        printf("Failed to join multicast group: %d\n", WSAGetLastError());
+    }
+    
+    // Set multicast TTL
+    DWORD ttl = 1;
+    if (::setsockopt(sock, IPPROTO_IP, IP_MULTICAST_TTL, (const char*)&ttl, sizeof(ttl)) != 0) {
+        printf("Set multicast TTL failed: %d\n", WSAGetLastError());
+    }
+    
+    // Multicast destination
+    struct sockaddr_in multicastAddr;
+    memset(&multicastAddr, 0, sizeof(multicastAddr));
+    multicastAddr.sin_family = AF_INET;
+    multicastAddr.sin_port = htons(3702);
+    multicastAddr.sin_addr.s_addr = inet_addr("239.255.255.250");
+    
+    // Send discovery message
+    int bytesSent = ::sendto(sock, broadcast_message.c_str(), (int)broadcast_message.length(), 0, 
+                            (struct sockaddr*)&multicastAddr, sizeof(multicastAddr));
+    
+    if (bytesSent < 0) {
+        printf("Send failed: %d\n", WSAGetLastError());
+        closesocket(sock);
+        return discovered;
+    }
+    
+    printf("Sent discovery message (%d bytes)\n", bytesSent);
+    
+    // Receive responses
+    printf("Waiting for responses...\n");
+    
+    char buf[8192];
+    int timeoutCounts = 0;
+    while (timeoutCounts < 2) {
+        struct sockaddr_in fromAddr;
+        int fromAddrLen = sizeof(fromAddr);
+        int len = ::recvfrom(sock, buf, sizeof(buf) - 1, 0, (struct sockaddr*)&fromAddr, &fromAddrLen);
+        
+        if (len < 0) {
+            int error = WSAGetLastError();
+            if (error == WSAETIMEDOUT) {
+                printf("Receive timed out\n");
+                timeoutCounts++;
+            } else {
+                printf("Receive error: %d\n", error);
+                break;
+            }
+        } 
+        else if (len > 0) {
+            buf[len] = '\0';
+            string response(buf, len);
+            discovered.push_back(response);
         }
-        p++;
     }
-
-    if (pIPAddrTable) {
-        free(pIPAddrTable);
-        pIPAddrTable = NULL;
-    }
-
-    status = setsockopt(socket.fd(), SOL_SOCKET, SO_RCVTIMEO, (const char *)&broadcast, sizeof(broadcast));
-#else
-    status = setsockopt(socket.fd(), SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
+    
+    closesocket(sock);
 #endif
-    status = setsockopt(socket.fd(), IPPROTO_IP, IP_MULTICAST_LOOP, (char *)&loopch, sizeof(loopch));
 
-    r_socket_address addr(3702, "239.255.255.250");
-
-    socket.sendto((uint8_t*)broadcast_message.c_str(), broadcast_message.length(), addr);
-
-    char buf[2048];
-    int len;
-
-    bool done = false;
-    while(!done)
-    {
-        len = socket.recvfrom((uint8_t*)buf, 2048, addr);
-
-        if(len < 0)
-            done = true;
-        else if(len > 0)
-        {
-            discovered.push_back(string(buf, len));
+#if defined(IS_LINUX)
+    // Linux-specific implementation
+    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0) {
+        perror("Socket creation failed");
+        return discovered;
+    }
+    
+    // Enable address reuse
+    int reuse = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+        perror("Set reuse address failed");
+        close(sock);
+        return discovered;
+    }
+    
+    // Set receive timeout
+    struct timeval recvTimeout;
+    recvTimeout.tv_sec = 5;  // 5 seconds
+    recvTimeout.tv_usec = 0;
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &recvTimeout, sizeof(recvTimeout)) < 0) {
+        perror("Set receive timeout failed");
+    }
+    
+    // Find active interface
+    struct in_addr routable_addr = _find_active_network_interface_linux();
+    
+    // Bind to ANY address on a dynamic port
+    struct sockaddr_in localAddr;
+    memset(&localAddr, 0, sizeof(localAddr));
+    localAddr.sin_family = AF_INET;
+    localAddr.sin_port = htons(0); // Dynamic port
+    localAddr.sin_addr.s_addr = INADDR_ANY;
+    
+    if (bind(sock, (struct sockaddr*)&localAddr, sizeof(localAddr)) < 0) {
+        perror("Bind failed");
+        close(sock);
+        return discovered;
+    }
+    
+    // Set multicast interface
+    if (setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, &routable_addr, sizeof(routable_addr)) < 0) {
+        perror("Set multicast interface failed");
+    }
+    
+    // Join multicast group
+    struct ip_mreq mreq;
+    mreq.imr_multiaddr.s_addr = inet_addr("239.255.255.250");
+    mreq.imr_interface = routable_addr;
+    
+    if (setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
+        perror("Failed to join multicast group");
+    }
+    
+    // Set multicast TTL
+    int ttl = 1;
+    if (setsockopt(sock, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) {
+        perror("Set multicast TTL failed");
+    }
+    
+    // Multicast destination
+    struct sockaddr_in multicastAddr;
+    memset(&multicastAddr, 0, sizeof(multicastAddr));
+    multicastAddr.sin_family = AF_INET;
+    multicastAddr.sin_port = htons(3702);
+    multicastAddr.sin_addr.s_addr = inet_addr("239.255.255.250");
+    
+    // Send discovery message
+    int bytesSent = sendto(sock, broadcast_message.c_str(), broadcast_message.length(), 0, 
+                          (struct sockaddr*)&multicastAddr, sizeof(multicastAddr));
+    
+    if (bytesSent < 0) {
+        perror("Send failed");
+        close(sock);
+        return discovered;
+    }
+    
+    printf("Sent discovery message (%d bytes)\n", bytesSent);
+    
+    // Receive responses
+    printf("Waiting for responses...\n");
+    
+    char buf[8192];
+    int timeoutCounts = 0;
+    while (timeoutCounts < 2) {
+        struct sockaddr_in fromAddr;
+        socklen_t fromAddrLen = sizeof(fromAddr);
+        int len = recvfrom(sock, buf, sizeof(buf) - 1, 0, (struct sockaddr*)&fromAddr, &fromAddrLen);
+        
+        if (len < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                printf("Receive timed out\n");
+                timeoutCounts++;
+            } else {
+                perror("Receive error");
+                break;
+            }
+        } 
+        else if (len > 0) {
+            buf[len] = '\0';
+            string response(buf, len);
+            discovered.push_back(response);
         }
     }
+    
+    close(sock);
+#endif
 
     return discovered;
 }
