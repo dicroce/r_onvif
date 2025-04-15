@@ -2,8 +2,6 @@
 #ifndef __r_onvif_r_onvif_session_h
 #define __r_onvif_r_onvif_session_h
 
-#include <pugixml.hpp>
-
 #include "r_utils/r_nullable.h"
 #include "r_utils/r_macro.h"
 #include <array>
@@ -55,14 +53,6 @@ public:
     std::string get_stream_uri(onvif_media_service media_service, onvif_profile_token profile_token);
 
 private:
-    void _add_username_digest_header(
-        pugi::xml_document* doc,
-        pugi::xml_node root, 
-        const std::string& username, 
-        const std::string& password, 
-        int time_offset_seconds
-    ) const;
-
     std::vector<std::string> _xaddrs_services;
     std::string _service_protocol;
     std::string _service_host;

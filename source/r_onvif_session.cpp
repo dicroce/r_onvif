@@ -51,6 +51,9 @@
     #include <sys/time.h>
 #endif
 
+#include <pugixml.hpp>
+
+
 using namespace r_onvif;
 using namespace r_utils;
 using namespace r_utils::r_std_utils;
@@ -571,6 +574,142 @@ static struct in_addr _find_active_network_interface_linux()
     return localAddr.sin_addr;
 }
 #endif
+
+static void _add_username_digest_header(
+    pugi::xml_document* doc,
+    pugi::xml_node root, 
+    const std::string& username, 
+    const std::string& password, 
+    int time_offset_seconds
+)
+{
+    srand((unsigned int)time(NULL));
+
+#ifdef IS_WINDOWS
+    _setmode(0, O_BINARY);
+#endif
+
+    unsigned int nonce_chunk_size = 20;
+    unsigned char nonce_buffer[20];
+    char nonce_base64[1024] = {0};
+    char time_holder[1024] = {0};
+    char digest_base64[1024] = {0};
+
+    for (unsigned int i=0; i<nonce_chunk_size; i++)
+        nonce_buffer[i] = (unsigned char)rand();
+
+    unsigned char nonce_result[30];
+    memset(nonce_result, 0, 30);
+
+    auto b64_encoded = r_utils::r_string_utils::to_base64(nonce_buffer, nonce_chunk_size);
+    memcpy(nonce_result, b64_encoded.c_str(), b64_encoded.length());
+
+#ifdef IS_WINDOWS
+    strcpy_s(nonce_base64, 1024, (char*)nonce_result);
+#endif
+#ifdef IS_LINUX
+    strcpy(nonce_base64, (char*)nonce_result);
+#endif
+
+    auto now = chrono::system_clock::now();
+    auto delta = chrono::duration_cast<chrono::milliseconds>(now.time_since_epoch());
+
+    struct timeval tv;
+    tv.tv_sec = (long)(delta.count() / 1000);
+    tv.tv_usec = (delta.count() % 1000) * 1000;
+
+    int millisec = tv.tv_usec / 1000;
+
+    char time_buffer[1024];
+    struct tm* this_tm = nullptr;
+#ifdef IS_WINDOWS
+    struct tm tm_storage;
+    time_t then = tv.tv_sec + time_offset_seconds;
+    auto err = gmtime_s(&tm_storage, &then);
+    if(err != 0)
+        R_THROW(("gmtime_s failed"));
+    this_tm = &tm_storage;
+#endif
+#ifdef IS_LINUX
+    time_t then = tv.tv_sec + time_offset_seconds;
+    //time_t then = camera_time;
+    this_tm = gmtime((time_t*)&then);
+#endif
+    size_t time_buffer_length = strftime(time_buffer, 1024, "%Y-%m-%dT%H:%M:%S.", this_tm);
+    time_buffer[time_buffer_length] = '\0';
+
+    char milli_buf[16] = {0};
+#ifdef IS_WINDOWS
+    sprintf_s(milli_buf, 16, "%03dZ", millisec);
+#endif
+#ifdef IS_LINUX
+    sprintf(milli_buf, "%03dZ", millisec);
+#endif
+#ifdef IS_WINDOWS
+    strcat_s(time_buffer, 1024, milli_buf);
+#endif
+#ifdef IS_LINUX
+    strcat(time_buffer, milli_buf);
+#endif
+
+    r_sha1 ctx;
+    ctx.update(nonce_buffer, nonce_chunk_size);
+    ctx.update((const unsigned char*)time_buffer, strlen(time_buffer));
+    ctx.update((const unsigned char*)password.c_str(), strlen(password.c_str()));
+    ctx.finalize();
+
+    unsigned char hash[20];
+    ctx.get(&hash[0]);
+
+    unsigned int digest_chunk_size = 20;
+    unsigned char digest_result[128];
+    b64_encoded = r_string_utils::to_base64(&hash[0], digest_chunk_size);
+    memset(digest_result, 0, 128);
+    memcpy(digest_result, b64_encoded.c_str(), b64_encoded.length());
+
+#ifdef IS_WINDOWS
+    strcpy_s(time_holder, 1024, time_buffer);
+    strcpy_s(digest_base64, 1024, (char*)digest_result);
+#endif
+#ifdef IS_LINUX
+    strcpy(time_holder, time_buffer);
+    strcpy(digest_base64, (const char *)digest_result);
+#endif
+
+    // Add WSSE and WSU namespaces
+    root.append_attribute("xmlns:wsse") = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd";
+    root.append_attribute("xmlns:wsu") = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd";
+    
+    // Create Header element
+    pugi::xml_node header = root.prepend_child("SOAP-ENV:Header");
+    
+    // Create Security element
+    pugi::xml_node security = header.append_child("wsse:Security");
+    security.append_attribute("SOAP-ENV:mustUnderstand") = "1";
+    
+    // Create UsernameToken element
+    pugi::xml_node usernameToken = security.append_child("wsse:UsernameToken");
+    
+    // Create Username element
+    pugi::xml_node usernameElem = usernameToken.append_child("wsse:Username");
+    usernameElem.text().set(username.c_str());
+    
+    // Create Password element
+    pugi::xml_node passwordElem = usernameToken.append_child("wsse:Password");
+    passwordElem.append_attribute("Type") = 
+        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest";
+    passwordElem.text().set(digest_base64);
+    
+    // Create Nonce element
+    pugi::xml_node nonceElem = usernameToken.append_child("wsse:Nonce");
+    nonceElem.append_attribute("EncodingType") = 
+        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary";
+    nonceElem.text().set(nonce_base64);
+    
+    // Create Created element
+    pugi::xml_node createdElem = usernameToken.append_child("wsu:Created");
+    createdElem.text().set(time_holder);
+}
 
 vector<string> r_onvif::discover(const string& uuid)
 {
@@ -1203,140 +1342,4 @@ string r_onvif::r_onvif_cam::get_stream_uri(onvif_media_service media_service, o
         throw std::runtime_error("Failed to get stream uri");
     
     return _extract_onvif_value(result.second, "s:Body//trt:GetStreamUriResponse//tt:Uri");
-}
-
-void r_onvif::r_onvif_cam::_add_username_digest_header(
-    pugi::xml_document* doc,
-    pugi::xml_node root, 
-    const std::string& username, 
-    const std::string& password, 
-    int time_offset_seconds
-) const
-{
-    srand((unsigned int)time(NULL));
-
-#ifdef IS_WINDOWS
-    _setmode(0, O_BINARY);
-#endif
-
-    unsigned int nonce_chunk_size = 20;
-    unsigned char nonce_buffer[20];
-    char nonce_base64[1024] = {0};
-    char time_holder[1024] = {0};
-    char digest_base64[1024] = {0};
-
-    for (unsigned int i=0; i<nonce_chunk_size; i++)
-        nonce_buffer[i] = (unsigned char)rand();
-
-    unsigned char nonce_result[30];
-    memset(nonce_result, 0, 30);
-
-    auto b64_encoded = r_utils::r_string_utils::to_base64(nonce_buffer, nonce_chunk_size);
-    memcpy(nonce_result, b64_encoded.c_str(), b64_encoded.length());
-
-#ifdef IS_WINDOWS
-    strcpy_s(nonce_base64, 1024, (char*)nonce_result);
-#endif
-#ifdef IS_LINUX
-    strcpy(nonce_base64, (char*)nonce_result);
-#endif
-
-    auto now = chrono::system_clock::now();
-    auto delta = chrono::duration_cast<chrono::milliseconds>(now.time_since_epoch());
-
-    struct timeval tv;
-    tv.tv_sec = (long)(delta.count() / 1000);
-    tv.tv_usec = (delta.count() % 1000) * 1000;
-
-    int millisec = tv.tv_usec / 1000;
-
-    char time_buffer[1024];
-    struct tm* this_tm = nullptr;
-#ifdef IS_WINDOWS
-    struct tm tm_storage;
-    time_t then = tv.tv_sec + time_offset_seconds;
-    auto err = gmtime_s(&tm_storage, &then);
-    if(err != 0)
-        R_THROW(("gmtime_s failed"));
-    this_tm = &tm_storage;
-#endif
-#ifdef IS_LINUX
-    time_t then = tv.tv_sec + time_offset_seconds;
-    //time_t then = camera_time;
-    this_tm = gmtime((time_t*)&then);
-#endif
-    size_t time_buffer_length = strftime(time_buffer, 1024, "%Y-%m-%dT%H:%M:%S.", this_tm);
-    time_buffer[time_buffer_length] = '\0';
-
-    char milli_buf[16] = {0};
-#ifdef IS_WINDOWS
-    sprintf_s(milli_buf, 16, "%03dZ", millisec);
-#endif
-#ifdef IS_LINUX
-    sprintf(milli_buf, "%03dZ", millisec);
-#endif
-#ifdef IS_WINDOWS
-    strcat_s(time_buffer, 1024, milli_buf);
-#endif
-#ifdef IS_LINUX
-    strcat(time_buffer, milli_buf);
-#endif
-
-    r_sha1 ctx;
-    ctx.update(nonce_buffer, nonce_chunk_size);
-    ctx.update((const unsigned char*)time_buffer, strlen(time_buffer));
-    ctx.update((const unsigned char*)password.c_str(), strlen(password.c_str()));
-    ctx.finalize();
-
-    unsigned char hash[20];
-    ctx.get(&hash[0]);
-
-    unsigned int digest_chunk_size = 20;
-    unsigned char digest_result[128];
-    b64_encoded = r_string_utils::to_base64(&hash[0], digest_chunk_size);
-    memset(digest_result, 0, 128);
-    memcpy(digest_result, b64_encoded.c_str(), b64_encoded.length());
-
-#ifdef IS_WINDOWS
-    strcpy_s(time_holder, 1024, time_buffer);
-    strcpy_s(digest_base64, 1024, (char*)digest_result);
-#endif
-#ifdef IS_LINUX
-    strcpy(time_holder, time_buffer);
-    strcpy(digest_base64, (const char *)digest_result);
-#endif
-
-    // Add WSSE and WSU namespaces
-    root.append_attribute("xmlns:wsse") = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd";
-    root.append_attribute("xmlns:wsu") = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd";
-    
-    // Create Header element
-    pugi::xml_node header = root.prepend_child("SOAP-ENV:Header");
-    
-    // Create Security element
-    pugi::xml_node security = header.append_child("wsse:Security");
-    security.append_attribute("SOAP-ENV:mustUnderstand") = "1";
-    
-    // Create UsernameToken element
-    pugi::xml_node usernameToken = security.append_child("wsse:UsernameToken");
-    
-    // Create Username element
-    pugi::xml_node usernameElem = usernameToken.append_child("wsse:Username");
-    usernameElem.text().set(username.c_str());
-    
-    // Create Password element
-    pugi::xml_node passwordElem = usernameToken.append_child("wsse:Password");
-    passwordElem.append_attribute("Type") = 
-        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest";
-    passwordElem.text().set(digest_base64);
-    
-    // Create Nonce element
-    pugi::xml_node nonceElem = usernameToken.append_child("wsse:Nonce");
-    nonceElem.append_attribute("EncodingType") = 
-        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary";
-    nonceElem.text().set(nonce_base64);
-    
-    // Create Created element
-    pugi::xml_node createdElem = usernameToken.append_child("wsu:Created");
-    createdElem.text().set(time_holder);
 }
