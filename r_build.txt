@@ -26,4 +26,80 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     )
 endif()
 
+set(CMAKE_PREFIX_PATH "/usr/local" CACHE STRING "Default prefix path for find_package")
 
+set(CPACK_GENERATOR "DEB")
+set(CPACK_PACKAGE_VENDOR "Tony Di Croce")
+set(CPACK_SET_DESTDIR TRUE)
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "dicroce@gmail.com")
+set(CPACK_PACKAGE_CONTACT "dicroce@gmail.com")
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "")
+set(CPACK_VERBATIM_VARIABLES YES)
+set(CPACK_PACKAGE_INSTALL_DIRECTORY ${CPACK_PACKAGE_NAME})
+set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_SOURCE_DIR}/_packages")
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+set(CPACK_OUTPUT_FILE_PREFIX ".")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)#ONE_PER_GROUP)
+set(CPACK_DEB_COMPONENT_INSTALL YES)
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+include(CPack)
+include(GNUInstallDirs)
+
+function(configure_dev_package package_name package_summary)
+    set(
+        CPACK_PACKAGE_NAME "${package_name}"
+        CACHE STRING "${package_name}"
+    )
+    set(
+        CPACK_PACKAGE_DESCRIPTION_SUMMARY "${package_summary}"
+        CACHE STRING "${package_summary}"
+    )
+
+    install(
+        DIRECTORY include/${package_name}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+
+    install(
+        TARGETS ${package_name}
+        EXPORT ${package_name}Targets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+
+    include(CMakePackageConfigHelpers)
+
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/${package_name}ConfigVersion.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+
+    configure_package_config_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/${package_name}Config.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/${package_name}Config.cmake"
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${package_name}
+    )
+
+    install(
+        FILES
+            "${CMAKE_CURRENT_BINARY_DIR}/${package_name}Config.cmake"
+            "${CMAKE_CURRENT_BINARY_DIR}/${package_name}ConfigVersion.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${package_name}
+    )
+
+    install(
+        EXPORT ${package_name}Targets
+        FILE ${package_name}Targets.cmake
+        NAMESPACE ${package_name}::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${package_name}
+    )
+endfunction()

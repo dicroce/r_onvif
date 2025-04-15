@@ -16,9 +16,16 @@ target_include_directories(
     include
     ../include
 )
+
+target_include_directories(
+    r_onvif_ut PRIVATE
+    ${pugixml_SOURCE_DIR}/src
+)
+
 target_link_libraries(
-    r_onvif_ut LINK_PUBLIC 
+    r_onvif_ut PRIVATE
     r_onvif
     r_http
     r_utils
+    uuid
 )

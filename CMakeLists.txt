@@ -13,6 +13,7 @@ FetchContent_Declare(
     r_utils
     GIT_REPOSITORY https://github.com/dicroce/r_utils.git
     GIT_TAG        main
+    FIND_PACKAGE_ARGS NAMES r_utils
 )
 FetchContent_MakeAvailable(r_utils)
 
@@ -20,6 +21,7 @@ FetchContent_Declare(
     r_http
     GIT_REPOSITORY https://github.com/dicroce/r_http.git
     GIT_TAG        main
+    FIND_PACKAGE_ARGS NAMES r_http
 )
 FetchContent_MakeAvailable(r_http)
 
@@ -34,28 +36,25 @@ add_library(
     r_onvif
     include/r_onvif/r_onvif_session.h
     source/r_onvif_session.cpp
+    ${pugixml_SOURCE_DIR}/src/pugixml.cpp
 )
 
 target_include_directories(
-    r_onvif PUBLIC 
-    include
-    ${r_utils_SOURCE_DIR}/include
-    ${r_http_SOURCE_DIR}/include
-    ${pugixml_SOURCE_DIR}/src/
+    r_onvif PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
 
-target_link_directories(
-    r_onvif PUBLIC 
-    ${r_utils_BUILD_DIR}
-    ${r_http_BUILD_DIR}
-    ${pugixml_BINARY_DIR}
+target_include_directories(r_onvif PRIVATE
+    ${pugixml_SOURCE_DIR}/src
 )
 
 target_link_libraries(
-    r_onvif 
-    r_http
+    r_onvif PRIVATE
     r_utils
-    pugixml
+    r_http
 )
 
 add_subdirectory(ut)
+
+configure_dev_package("r_onvif" "A C++ library that does onvif camera discovery and media service discovery.")
