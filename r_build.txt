@@ -64,6 +64,7 @@ function(configure_dev_package package_name package_summary)
     install(
         DIRECTORY include/${package_name}
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
     )
 
     install(
