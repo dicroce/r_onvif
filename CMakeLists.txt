@@ -55,6 +55,10 @@ target_link_libraries(
     r_http
 )
 
+option(BUILD_INSTALL_DEV_PACKAGES "Install dev packages for subprojects" OFF)
+
 add_subdirectory(ut)
 
-configure_dev_package("r_onvif" "A C++ library that does onvif camera discovery and media service discovery.")
+if(PROJECT_IS_TOP_LEVEL OR BUILD_INSTALL_DEV_PACKAGES)
+    configure_dev_package("r_onvif" "A C++ library that does onvif camera discovery and media service discovery.")
+endif()
