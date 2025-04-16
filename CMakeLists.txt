@@ -30,6 +30,10 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/zeux/pugixml.git
     GIT_TAG        v1.15
 )
+
+set(PUGIXML_BUILD_SHARED OFF CACHE BOOL "")
+set(PUGIXML_INSTALL OFF CACHE BOOL "Disable pugixml install target")
+
 FetchContent_MakeAvailable(pugixml)
 
 add_library(
