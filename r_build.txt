@@ -27,8 +27,6 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 endif()
 
 set(CMAKE_PREFIX_PATH "/usr/local" CACHE STRING "Default prefix path for find_package")
-<<<<<<< HEAD
-=======
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     set(CPACK_GENERATOR "NSIS")
@@ -132,7 +130,6 @@ function(configure_dev_package package_name package_summary)
     )
 endfunction()
 
->>>>>>> e93f8cb (Update r_build.txt with common configuration)
 
 set(CPACK_GENERATOR "DEB")
 set(CPACK_PACKAGE_VENDOR "Tony Di Croce")
