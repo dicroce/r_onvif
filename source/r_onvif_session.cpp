@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include "r_onvif/r_onvif_session.h"
 #include "r_utils/r_socket.h"
+#include "r_utils/r_ssl_socket.h"
 #include "r_utils/r_string_utils.h"
 #include "r_utils/r_sha1.h"
 #include "r_utils/r_time_utils.h"
@@ -60,27 +61,55 @@ using namespace r_utils::r_std_utils;
 using namespace std;
 
 static pair<int, string> _http_interact(
-    const string& host,
+    string host,
     int port,
-    const string& http_method,
-    const string& uri,
-    const string& body
+    string http_method,
+    string uri,
+    string body
 )
 {
-    r_socket socket;
-    socket.connect(host, port);
+retry:
+    R_LOG_INFO("HTTP interact: %s(%d)(%s)", host.c_str(), port, uri.c_str());
+
+    std::unique_ptr<r_utils::r_socket_base> sock;
+
+    if (port == 443)
+        sock = std::make_unique<r_utils::r_ssl_socket>();
+    else
+        sock = std::make_unique<r_utils::r_socket>();
+
+    sock->connect(host, port);
 
     r_http::r_client_request request(host, port);
     request.set_method(r_http::method_type(http_method));
     request.set_uri(uri);
     request.set_body(body);
 
-    request.write_request(socket);
+    request.write_request(*sock);
 
     r_http::r_client_response response;
-    response.read_response(socket);
+    response.read_response(*sock);
 
-    socket.close();
+    //sock->close();
+
+    if(response.get_status() == 302)
+    {
+        string location = response.get_header("Location");
+        R_LOG_INFO("Redirect response to %s", location.c_str());
+        if(location.empty())
+            throw std::runtime_error("Redirect response but no Location header");
+
+        string protocol, new_uri;
+        r_http::parse_url_parts(location, host, port, protocol, new_uri);
+
+        // If the new URI is not the same as the original URI, update the URI
+        if(new_uri != "/")
+            uri = new_uri;
+
+        R_LOG_INFO("Redirecting to (%s)(%d)(%s)", host.c_str(), port, uri.c_str());
+
+        goto retry;
+    }
 
     auto maybe_body = response.get_body_as_string();
 
@@ -88,6 +117,95 @@ static pair<int, string> _http_interact(
         return make_pair(response.get_status(), string());
 
     return make_pair(response.get_status(), maybe_body.value());
+
+
+
+
+
+#if 0
+    if(port == 443)
+    {
+        r_ssl_socket socket;
+        socket.connect(host, port);
+
+        r_http::r_client_request request(host, port);
+        request.set_method(r_http::method_type(http_method));
+        request.set_uri(uri);
+        request.set_body(body);
+
+        request.write_request(socket);
+
+        r_http::r_client_response response;
+        response.read_response(socket);
+
+        socket.close();
+
+        if(response.get_status() == 302)
+        {
+            string location = response.get_header("Location");
+            R_LOG_INFO("Redirect response to %s", location.c_str());
+            if(location.empty())
+                throw std::runtime_error("Redirect response but no Location header");
+
+            string protocol;
+            r_http::parse_url_parts(location, host, port, protocol, uri);
+
+            R_LOG_INFO("Redirecting to (%s)(%d)(%s)", host.c_str(), port, uri.c_str());
+
+            goto retry;
+        }
+
+        auto maybe_body = response.get_body_as_string();
+
+        if(maybe_body.is_null())
+            return make_pair(response.get_status(), string());
+
+        return make_pair(response.get_status(), maybe_body.value());        
+    }
+    else
+    {
+        r_socket socket;
+        socket.connect(host, port);
+
+        r_http::r_client_request request(host, port);
+        request.set_method(r_http::method_type(http_method));
+        request.set_uri(uri);
+        request.set_body(body);
+
+        request.write_request(socket);
+
+        r_http::r_client_response response;
+        response.read_response(socket);
+
+        socket.close();
+
+        if(response.get_status() == 302)
+        {
+            string location = response.get_header("Location");
+            R_LOG_INFO("Redirect response to %s", location.c_str());
+            if(location.empty())
+                throw std::runtime_error("Redirect response but no Location header");
+
+            string protocol, new_uri;
+            r_http::parse_url_parts(location, host, port, protocol, new_uri);
+
+            // If the new URI is not the same as the original URI, update the URI
+            if(new_uri != "/")
+                uri = new_uri;
+
+            R_LOG_INFO("Redirecting to (%s)(%d)(%s)", host.c_str(), port, uri.c_str());
+
+            goto retry;
+        }
+
+        auto maybe_body = response.get_body_as_string();
+
+        if(maybe_body.is_null())
+            return make_pair(response.get_status(), string());
+
+        return make_pair(response.get_status(), maybe_body.value());
+    }
+#endif
 }
 
 static time_t _portable_timegm(struct tm* t)
@@ -1155,7 +1273,7 @@ r_onvif::onvif_capabilities r_onvif::r_onvif_cam::get_camera_capabilities() cons
     
     // Check status code
     if (result.first != 200)
-        throw std::runtime_error("Failed to get camera capabilities");
+        throw std::runtime_error("Failed to get camera capabilities: " + std::to_string(result.first));
     
     return result.second;
 }
